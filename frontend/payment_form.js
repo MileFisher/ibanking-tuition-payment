@@ -97,11 +97,19 @@ function setupEventListeners() {
         });
     }
 
-    // Form submission
+    // Prevent form submission and handle button click directly
     const paymentForm = document.getElementById('paymentForm');
     if (paymentForm) {
         paymentForm.addEventListener('submit', function (e) {
-            e.preventDefault();
+            e.preventDefault(); // Prevent form submission
+        });
+    }
+
+    // Attach click handler to confirm button
+    const confirmBtn = document.getElementById('confirmBtn');
+    if (confirmBtn) {
+        confirmBtn.addEventListener('click', function (e) {
+            e.preventDefault(); // Prevent any default action
             handlePaymentConfirmation();
         });
     }
@@ -143,38 +151,9 @@ async function lookupStudent() {
             lookupBtn.innerHTML = '<span class="loading-spinner"></span>Looking up...';
         }
 
-        console.log('Checking for pending transactions...');
-
-        // Check for pending transactions first
-        const checkResponse = await fetch(
-            `${API_BASE_URL}/customers/receiver/check/${studentId}`,
-            {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json'
-                }
-            }
-        );
-
-        console.log('Check response status:', checkResponse.status);
-
-        if (checkResponse.ok) {
-            const checkData = await checkResponse.json();
-            console.log('Check data:', checkData);
-            
-            if (checkData.result === true) {
-                showMessage('There is already a pending transaction for this student. Please try again later.', 'error');
-                hideStudentInformation();
-                const confirmBtn = document.getElementById('confirmBtn');
-                if (confirmBtn) confirmBtn.disabled = true;
-                return;
-            }
-        }
-
         console.log('Fetching student information...');
 
-        // Fetch student information
+        // Fetch student information directly (no pending transaction check here)
         const response = await fetch(
             `${API_BASE_URL}/customers/receiver/${studentId}`,
             {
@@ -191,6 +170,16 @@ async function lookupStudent() {
         if (response.ok) {
             const data = await response.json();
             console.log('Student data received:', data);
+            
+            // Check if student has unpaid tuition debt
+            if (!data.debt_id || !data.amount || data.amount <= 0 || data.status === 'PAID') {
+                console.log('No unpaid tuition debt found for this student');
+                showMessage('This student has no pending tuition debt. All tuition fees have been paid.', 'info');
+                hideStudentInformation();
+                const confirmBtn = document.getElementById('confirmBtn');
+                if (confirmBtn) confirmBtn.disabled = true;
+                return;
+            }
             
             // Transform the data to match frontend expectations
             currentStudent = {
@@ -280,12 +269,18 @@ function hideStudentInformation() {
 }
 
 // Handle payment confirmation
-function handlePaymentConfirmation() {
+async function handlePaymentConfirmation() {
     console.log('=== PAYMENT CONFIRMATION ===');
     
     // Validate that student information is loaded
     if (!currentStudent) {
         showMessage('Please lookup student information first', 'error');
+        return;
+    }
+
+    // Validate that student has unpaid debt
+    if (!currentStudent.tuition.debt_id || !currentStudent.tuition.amount || currentStudent.tuition.amount <= 0) {
+        showMessage('Cannot process payment: No valid tuition debt found', 'error');
         return;
     }
 
@@ -301,8 +296,40 @@ function handlePaymentConfirmation() {
         return;
     }
 
-    // Show OTP modal
-    openOtpModal();
+    try {
+        // Check for pending transactions before proceeding
+        console.log('Checking for pending transactions...');
+        
+        const checkResponse = await fetch(
+            `${API_BASE_URL}/customers/receiver/check/${currentStudent.student_id}`,
+            {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
+
+        console.log('Check response status:', checkResponse.status);
+
+        if (checkResponse.ok) {
+            const checkData = await checkResponse.json();
+            console.log('Check data:', checkData);
+            
+            if (checkData.result === true) {
+                showMessage('There is already a pending transaction for this student. Please try again later.', 'error');
+                return;
+            }
+        }
+
+        // If no pending transactions, proceed to OTP modal
+        openOtpModal();
+
+    } catch (error) {
+        console.error('Error checking pending transactions:', error);
+        showMessage('Failed to verify transaction status. Please try again.', 'error');
+    }
 }
 
 // Open OTP Modal
