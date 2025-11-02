@@ -1,4 +1,7 @@
-// login.js - Handles login form submission and validation
+// login.js - Handles login form submission with FastAPI backend
+
+// API Configuration
+const API_BASE_URL = 'http://localhost:8000';
 
 document.addEventListener('DOMContentLoaded', function () {
     const loginForm = document.getElementById('loginForm');
@@ -25,35 +28,57 @@ document.addEventListener('DOMContentLoaded', function () {
         setLoadingState(true);
 
         try {
-            // Send login request to backend
-            const response = await fetch('api/login.php', {
+            // FastAPI OAuth2 expects form data, not JSON
+            const formData = new URLSearchParams();
+            formData.append('username', username);
+            formData.append('password', password);
+
+            // Send login request to FastAPI backend
+            const response = await fetch(`${API_BASE_URL}/token`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
+                    'Content-Type': 'application/x-www-form-urlencoded',
                 },
-                body: JSON.stringify({
-                    username: username,
-                    password: password
-                })
+                body: formData
             });
 
             const data = await response.json();
 
-            if (data.success) {
-                // Store user data in sessionStorage
-                sessionStorage.setItem('user', JSON.stringify(data.user));
-                sessionStorage.setItem('token', data.token || 'session_' + Date.now());
+            if (response.ok && data.access_token) {
+                // Store access token
+                sessionStorage.setItem('access_token', data.access_token);
+                sessionStorage.setItem('token_type', data.token_type);
 
-                // Redirect to payment page
-                window.location.href = 'payment_form.html';
+                // Fetch user information
+                const userResponse = await fetch(`${API_BASE_URL}/customers/me`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${data.access_token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (userResponse.ok) {
+                    const user = await userResponse.json();
+                    
+                    // Store user data in sessionStorage
+                    sessionStorage.setItem('user', JSON.stringify(user));
+                    sessionStorage.setItem('username', user.username);
+
+                    // FIXED: Redirect to payment page with correct path
+                    console.log('Login successful, redirecting to payment form...');
+                    window.location.href = '/ibanking/frontend/payment_form.html';
+                } else {
+                    showError('Failed to retrieve user information');
+                }
             } else {
                 // Show error message
-                showError(data.message || 'Invalid username or password');
+                showError(data.detail || 'Invalid username or password');
             }
 
         } catch (error) {
             console.error('Login error:', error);
-            showError('Connection error. Please check if XAMPP is running and try again.');
+            showError('Connection error. Please check if the backend server is running on port 8000.');
         } finally {
             // Re-enable button
             setLoadingState(false);

@@ -1,16 +1,21 @@
-// transaction_history.js - Handles transaction history display
+// transaction_history.js - Handles transaction history display with FastAPI backend
+
+// API Configuration
+const API_BASE_URL = 'http://localhost:8000';
 
 // Global variables
 let currentUser = null;
 let transactions = [];
 let currentTransaction = null;
+let accessToken = null;
 
 // Initialize page on load
 document.addEventListener('DOMContentLoaded', function () {
     // Check if user is logged in
     const userData = sessionStorage.getItem('user');
+    accessToken = sessionStorage.getItem('access_token');
 
-    if (!userData) {
+    if (!userData || !accessToken) {
         // Redirect to login if not logged in
         window.location.href = 'login.html';
         return;
@@ -32,7 +37,7 @@ function loadUserInformation() {
     document.getElementById('headerBalance').textContent = formatCurrency(currentUser.available_balance);
 }
 
-// Load transactions from backend (or simulate)
+// Load transactions from FastAPI backend
 async function loadTransactions() {
     const loadingState = document.getElementById('loadingState');
     const emptyState = document.getElementById('emptyState');
@@ -44,23 +49,40 @@ async function loadTransactions() {
     transactionsList.innerHTML = '';
 
     try {
-        // Simulate API call to fetch transactions
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        // Get transactions (in production, call actual API)
-        const result = await fetchTransactions();
-
-        transactions = result.transactions;
+        // Fetch transactions from backend
+        const response = await fetch(`${API_BASE_URL}/transactions/me`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            }
+        });
 
         // Hide loading state
         loadingState.style.display = 'none';
 
-        if (transactions.length === 0) {
-            // Show empty state
-            emptyState.style.display = 'block';
+        if (response.ok) {
+            const data = await response.json();
+            
+            // Check if data is an array or has a transactions property
+            transactions = Array.isArray(data) ? data : (data.transactions || []);
+
+            if (transactions.length === 0) {
+                // Show empty state
+                emptyState.style.display = 'block';
+            } else {
+                // Sort transactions by date (newest first)
+                transactions.sort((a, b) => 
+                    new Date(b.completed_at || b.initiated_at) - new Date(a.completed_at || a.initiated_at)
+                );
+                
+                // Display transactions
+                displayTransactions(transactions);
+            }
         } else {
-            // Display transactions
-            displayTransactions(transactions);
+            // Handle error response
+            console.error('Failed to fetch transactions');
+            emptyState.style.display = 'block';
         }
 
     } catch (error) {
@@ -68,60 +90,6 @@ async function loadTransactions() {
         loadingState.style.display = 'none';
         emptyState.style.display = 'block';
     }
-}
-
-// Fetch transactions from backend (simulated)
-async function fetchTransactions() {
-    // Simulate network delay
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    // Sample transactions based on database structure
-    // In production, replace with actual API call
-    const sampleTransactions = [
-        {
-            transaction_id: '425d76e7-fe39-4270-b89a-49ebc9e34b94',
-            payer_id: currentUser.customer_id,
-            payer_name: currentUser.full_name,
-            receiver_id: '523K0077',
-            receiver_name: 'Saw Baw Mu Thaw',
-            amount: 2500000,
-            status: 'COMPLETED',
-            initiated_at: '2025-09-28T17:26:00',
-            completed_at: '2025-09-28T17:26:15',
-            debt_id: 1,
-            semester: 'SEMESTER 1',
-            academic_year: '2025-2026'
-        },
-        {
-            transaction_id: '4c858d24-d045-4027-8c4a-8a8d7efe28d4',
-            payer_id: currentUser.customer_id,
-            payer_name: currentUser.full_name,
-            receiver_id: '523K0034',
-            receiver_name: 'Saw Harry',
-            amount: 2500000,
-            status: 'COMPLETED',
-            initiated_at: '2025-09-28T17:15:00',
-            completed_at: '2025-09-28T17:15:12',
-            debt_id: 2,
-            semester: 'SEMESTER 2',
-            academic_year: '2025-2026'
-        }
-    ];
-
-    // Only return transactions for current user
-    const userTransactions = sampleTransactions.filter(
-        txn => txn.payer_id === currentUser.customer_id
-    );
-
-    // Sort by date (newest first)
-    userTransactions.sort((a, b) =>
-        new Date(b.completed_at) - new Date(a.completed_at)
-    );
-
-    return {
-        success: true,
-        transactions: userTransactions
-    };
 }
 
 // Display transactions in the list
@@ -141,22 +109,23 @@ function createTransactionItem(transaction) {
     item.className = 'transaction-item';
     item.onclick = () => showTransactionDetail(transaction);
 
-    const statusClass = transaction.status.toLowerCase();
-    const statusText = transaction.status;
+    const statusClass = (transaction.status || 'PENDING').toLowerCase();
+    const statusText = transaction.status || 'PENDING';
+    const displayDate = transaction.completed_at || transaction.initiated_at;
 
     item.innerHTML = `
         <div class="transaction-header">
             <div>
-                <div class="transaction-title">Tuition payment for ${transaction.receiver_name}</div>
+                <div class="transaction-title">Tuition payment for ${transaction.receiver_name || transaction.receiver_id}</div>
                 <div class="transaction-details">
                     <div class="transaction-info">
-                        <strong>Student:</strong> ${transaction.receiver_name}
+                        <strong>Student:</strong> ${transaction.receiver_name || transaction.receiver_id}
                     </div>
                     <div class="transaction-info">
-                        <strong>Date:</strong> ${formatDateTime(transaction.completed_at)}
+                        <strong>Date:</strong> ${formatDateTime(displayDate)}
                     </div>
                     <div class="transaction-id">
-                        ID: ${transaction.transaction_id}
+                        ID: ${transaction.transaction_id || 'N/A'}
                     </div>
                 </div>
             </div>
@@ -175,17 +144,19 @@ function showTransactionDetail(transaction) {
     currentTransaction = transaction;
 
     // Populate modal with transaction details
-    document.getElementById('detailTxnId').textContent = transaction.transaction_id;
-    document.getElementById('detailStatus').textContent = transaction.status;
-    document.getElementById('detailDateTime').textContent = formatDateTime(transaction.completed_at);
+    document.getElementById('detailTxnId').textContent = transaction.transaction_id || 'N/A';
+    document.getElementById('detailStatus').textContent = transaction.status || 'PENDING';
+    
+    const displayDate = transaction.completed_at || transaction.initiated_at;
+    document.getElementById('detailDateTime').textContent = formatDateTime(displayDate);
 
-    document.getElementById('detailPayer').textContent = transaction.payer_name;
+    document.getElementById('detailPayer').textContent = transaction.payer_name || currentUser.full_name;
     document.getElementById('detailStudentId').textContent = transaction.receiver_id;
-    document.getElementById('detailStudentName').textContent = transaction.receiver_name;
+    document.getElementById('detailStudentName').textContent = transaction.receiver_name || transaction.receiver_id;
     document.getElementById('detailAmount').textContent = formatCurrency(transaction.amount);
 
-    document.getElementById('detailSemester').textContent = transaction.semester;
-    document.getElementById('detailAcademicYear').textContent = transaction.academic_year;
+    document.getElementById('detailSemester').textContent = transaction.semester || 'N/A';
+    document.getElementById('detailAcademicYear').textContent = transaction.academic_year || 'N/A';
 
     // Show modal
     document.getElementById('detailModal').style.display = 'block';
@@ -219,12 +190,14 @@ async function refreshTransactions() {
     }
 }
 
-// Download receipt (placeholder function)
+// Download receipt
 function downloadReceipt() {
     if (!currentTransaction) {
         alert('No transaction selected');
         return;
     }
+
+    const displayDate = currentTransaction.completed_at || currentTransaction.initiated_at;
 
     // Create receipt content
     const receiptContent = `
@@ -232,26 +205,26 @@ function downloadReceipt() {
         TUITION PAYMENT RECEIPT
 ===========================================
 
-Transaction ID: ${currentTransaction.transaction_id}
-Date: ${formatDateTime(currentTransaction.completed_at)}
-Status: ${currentTransaction.status}
+Transaction ID: ${currentTransaction.transaction_id || 'N/A'}
+Date: ${formatDateTime(displayDate)}
+Status: ${currentTransaction.status || 'PENDING'}
 
 -------------------------------------------
 PAYER INFORMATION
 -------------------------------------------
-Name: ${currentTransaction.payer_name}
+Name: ${currentTransaction.payer_name || currentUser.full_name}
 
 -------------------------------------------
 STUDENT INFORMATION
 -------------------------------------------
 Student ID: ${currentTransaction.receiver_id}
-Student Name: ${currentTransaction.receiver_name}
+Student Name: ${currentTransaction.receiver_name || currentTransaction.receiver_id}
 
 -------------------------------------------
 PAYMENT DETAILS
 -------------------------------------------
-Semester: ${currentTransaction.semester}
-Academic Year: ${currentTransaction.academic_year}
+Semester: ${currentTransaction.semester || 'N/A'}
+Academic Year: ${currentTransaction.academic_year || 'N/A'}
 Amount: ${formatCurrency(currentTransaction.amount)}
 
 -------------------------------------------
@@ -265,7 +238,7 @@ Generated on: ${formatDateTime(new Date().toISOString())}
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `receipt_${currentTransaction.transaction_id}.txt`;
+    a.download = `receipt_${currentTransaction.transaction_id || Date.now()}.txt`;
     document.body.appendChild(a);
     a.click();
     window.URL.revokeObjectURL(url);
@@ -285,6 +258,8 @@ function formatCurrency(amount) {
 
 // Format date and time
 function formatDateTime(dateString) {
+    if (!dateString) return 'N/A';
+    
     const date = new Date(dateString);
 
     const dateOptions = {
