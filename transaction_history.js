@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (!userData || !accessToken) {
         // Redirect to login if not logged in
-        window.location.href = './login.html';
+        window.location.href = 'login.html';
         return;
     }
 

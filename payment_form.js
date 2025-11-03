@@ -7,7 +7,9 @@ const API_BASE_URL = 'http://localhost:8000';
 let currentUser = null;
 let currentStudent = null;
 let otpTimerInterval = null;
+let otpResendTimerInterval = null;
 let accessToken = null;
+let transaction_id = null;
 
 // Initialize page on load
 document.addEventListener('DOMContentLoaded', function () {
@@ -121,6 +123,8 @@ function setupEventListeners() {
             this.value = this.value.replace(/[^0-9]/g, '');
         });
     }
+
+    
 }
 
 // Lookup student by ID using FastAPI
@@ -326,6 +330,7 @@ async function handlePaymentConfirmation() {
         // If no pending transactions, proceed to OTP modal
         openOtpModal();
 
+        await processPayment()
     } catch (error) {
         console.error('Error checking pending transactions:', error);
         showMessage('Failed to verify transaction status. Please try again.', 'error');
@@ -405,8 +410,36 @@ async function verifyOtp() {
         console.log('Verifying OTP:', otpCode);
         
         if (otpCode.length === 6 && /^\d+$/.test(otpCode)) {
-            closeOtpModal();
-            await processPayment();
+            
+            // await processPayment();
+
+            const verifyOtpData = {
+                transaction_id : transaction_id,
+                otp : otpCode
+            };
+
+            console.log('Request Body for OTP', JSON.stringify(verifyOtpData))
+
+            const response = await fetch(`${API_BASE_URL}/otp/verify`, {
+                method: 'POST',
+                headers: {
+                    'Authorization' : `Bearer ${accessToken}`,
+                    'Content-Type' : 'application/json'
+                },
+                body: JSON.stringify(verifyOtpData)
+            });
+
+            console.log('Verify OTP status:', response.status)
+
+            if(response.ok){
+                // show completion screen
+                showSuccessPage(transaction_id)
+                transaction_id = null
+
+                closeOtpModal();
+            }else{
+                showOtpError('Invalid OTP code')
+            }
         } else {
             showOtpError('Invalid OTP code');
         }
@@ -451,7 +484,8 @@ async function processPayment() {
             currentUser.available_balance -= currentStudent.tuition.amount;
             sessionStorage.setItem('user', JSON.stringify(currentUser));
 
-            showSuccessPage(result.transaction_id);
+            transaction_id = result.transaction_id
+            // showSuccessPage(result.transaction_id);
         } else {
             const errorData = await response.json();
             console.error('Payment failed:', errorData);
@@ -559,6 +593,25 @@ function formatDate(dateString) {
     });
 }
 
+// resend otp function
+function resendOtp() {
+    console.log('Clicked otp resend button')
+    if(transaction_id != null) {
+        const response = fetch(`${API_BASE_URL}/otp/resend/${transaction_id}`,
+        {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            }
+        })
+
+        if(response.ok) {
+            showOtpError('A new otp has been sent to your email')
+        }
+    }
+}
+
 // Logout function
 function logout() {
     console.log('Logging out...');
@@ -567,9 +620,9 @@ function logout() {
 }
 
 // Close modal when clicking outside
-window.onclick = function (event) {
-    const modal = document.getElementById('otpModal');
-    if (event.target === modal) {
-        closeOtpModal();
-    }
-};
+// window.onclick = function (event) {
+//     const modal = document.getElementById('otpModal');
+//     if (event.target === modal) {
+//         closeOtpModal();
+//     }
+// };
