@@ -67,7 +67,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
                     // FIXED: Redirect to payment page with correct path
                     console.log('Login successful, redirecting to payment form...');
-                    window.location.href = '/ibanking/frontend/payment_form.html';
+                    window.location.href = './payment_form.html';
                 } else {
                     showError('Failed to retrieve user information');
                 }

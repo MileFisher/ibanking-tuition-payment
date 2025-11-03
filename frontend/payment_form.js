@@ -23,7 +23,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!userData || !accessToken) {
         // Redirect to login if not logged in
         console.log('No user data or token found, redirecting to login...');
-        window.location.href = '/ibanking/frontend/login.html';
+        window.location.href = './login.html';
         return;
     }
 
@@ -172,7 +172,7 @@ async function lookupStudent() {
             console.log('Student data received:', data);
             
             // Check if student has unpaid tuition debt
-            if (!data.debt_id || !data.amount || data.amount <= 0 || data.status === 'PAID') {
+            if (!data.Debt || !data.Debt.debt_id || !data.Debt.amount || data.Debt.amount <= 0 || data.Debt.status === 'PAID') {
                 console.log('No unpaid tuition debt found for this student');
                 showMessage('This student has no pending tuition debt. All tuition fees have been paid.', 'info');
                 hideStudentInformation();
@@ -183,16 +183,16 @@ async function lookupStudent() {
             
             // Transform the data to match frontend expectations
             currentStudent = {
-                student_id: data.student_id,
-                full_name: data.full_name,
-                program: data.program,
+                student_id: data.Customer.student_id,
+                full_name: data.Customer.full_name,
+                program: data.Customer.program,
                 tuition: {
-                    debt_id: data.debt_id,
-                    amount: data.amount,
-                    semester: data.semester,
-                    academic_year: data.academic_year,
-                    due_date: data.due_date,
-                    status: data.status
+                    debt_id: data.Debt.debt_id,
+                    amount: data.Debt.amount,
+                    semester: data.Debt.semester,
+                    academic_year: data.Debt.academic_year,
+                    due_date: data.Debt.due_date,
+                    status: data.Debt.status
                 }
             };
 
@@ -563,7 +563,7 @@ function formatDate(dateString) {
 function logout() {
     console.log('Logging out...');
     sessionStorage.clear();
-    window.location.href = '/ibanking/frontend/login.html';
+    window.location.href = './login.html';
 }
 
 // Close modal when clicking outside
